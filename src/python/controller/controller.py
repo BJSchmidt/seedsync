@@ -458,14 +458,18 @@ class Controller:
                     self.__model_builder.set_extract_failed_files(set(self.__persist.extract_failed_file_names))
 
                 # Detect if a file was just Downloaded
-                #   an Added file in Downloaded state
+                #   an Added file in Downloaded state that was previously tracked
+                #   (files already in persist were downloaded by this app; pre-existing
+                #   local files that were never queued must be excluded to avoid a
+                #   spurious staging -> local move for files not in staging)
                 #   an Updated file transitioning to Downloaded state
                 # If so, update the persist state
                 # Note: This step is done after the new model is build because
                 #       model_builder is the one that discovers when a file is Downloaded
                 downloaded = False
                 if diff.change == ModelDiff.Change.ADDED and \
-                        diff.new_file.state == ModelFile.State.DOWNLOADED:
+                        diff.new_file.state == ModelFile.State.DOWNLOADED and \
+                        diff.new_file.name in self.__persist.downloaded_file_names:
                     downloaded = True
                 elif diff.change == ModelDiff.Change.UPDATED and \
                         diff.new_file.state == ModelFile.State.DOWNLOADED and \
