@@ -458,34 +458,69 @@ class Controller:
                     self.__model_builder.set_extract_failed_files(set(self.__persist.extract_failed_file_names))
 
                 # Detect if a file was just Downloaded
-                #   an Added file in Downloaded state that was previously tracked
-                #   (files already in persist were downloaded by this app; pre-existing
-                #   local files that were never queued must be excluded to avoid a
-                #   spurious staging -> local move for files not in staging)
+                #   an Added file in Downloaded state
                 #   an Updated file transitioning to Downloaded state
                 # If so, update the persist state
                 # Note: This step is done after the new model is build because
                 #       model_builder is the one that discovers when a file is Downloaded
                 downloaded = False
+                # Capture whether this file was already in persist before this cycle.
+                # UPDATED means the app was tracking it (safe to move from staging).
+                # ADDED+already_in_persist means it completed in a prior session or via
+                # LFTP earlier this cycle. Pre-existing/lost-persist local-only files
+                # will not be in persist yet and must not trigger a staging move.
+                already_in_persist = diff.new_file.name in self.__persist.downloaded_file_names
                 if diff.change == ModelDiff.Change.ADDED and \
-                        diff.new_file.state == ModelFile.State.DOWNLOADED and \
-                        diff.new_file.name in self.__persist.downloaded_file_names:
+                        diff.new_file.state == ModelFile.State.DOWNLOADED:
                     downloaded = True
                 elif diff.change == ModelDiff.Change.UPDATED and \
                         diff.new_file.state == ModelFile.State.DOWNLOADED and \
                         diff.old_file.state != ModelFile.State.DOWNLOADED:
                     downloaded = True
+                # Detect local-only files/dirs (exist locally, remote already gone).
+                # Two sub-cases:
+                # a) already_in_persist=True: file was downloaded by this app but the
+                #    move didn't complete (e.g. crash). Treat as downloaded so the move
+                #    is retried — already_in_persist=True means was_tracked passes.
+                # b) already_in_persist=False: truly pre-existing or lost-persist file.
+                #    Add to persist so the model builder marks it DOWNLOADED next cycle,
+                #    but do NOT set downloaded=True so no move is spawned.
+                elif diff.change == ModelDiff.Change.ADDED and \
+                        diff.new_file.state == ModelFile.State.DEFAULT and \
+                        diff.new_file.local_size is not None and \
+                        diff.new_file.remote_size is None:
+                    if already_in_persist:
+                        # Previously downloaded, move was interrupted — retry the move
+                        self.logger.debug(
+                            "Local-only file/dir in persist, retrying move: {}".format(diff.new_file.name)
+                        )
+                        downloaded = True
+                    else:
+                        # Pre-existing or lost-persist — mark for UI, skip move
+                        self.logger.debug(
+                            "Local-only file/dir, adding to persist: {}".format(diff.new_file.name)
+                        )
+                        self.__persist.downloaded_file_names.add(diff.new_file.name)
+                        self.__model_builder.set_downloaded_files(set(self.__persist.downloaded_file_names))
                 if downloaded:
                     self.__persist.downloaded_file_names.add(diff.new_file.name)
                     self.__model_builder.set_downloaded_files(self.__persist.downloaded_file_names)
 
                     # Move from staging to final location for non-extractable files
                     # (extractable files are moved after extraction completes)
+                    # Only spawn a move if the file went through LFTP this session
+                    # (__pending_completion) or was previously tracked (UPDATED transition
+                    # or already in persist from a prior session). ADDED+DOWNLOADED files
+                    # that appear on first startup with no prior history are pre-existing
+                    # local files that were never in staging.
                     if self.__context.config.controller.use_staging and \
                             self.__context.config.controller.staging_path:
                         will_auto_extract = self.__context.config.autoqueue.auto_extract and \
                                             diff.new_file.is_extractable
-                        if not will_auto_extract:
+                        was_tracked = diff.change == ModelDiff.Change.UPDATED or \
+                                      already_in_persist or \
+                                      diff.new_file.name in self.__pending_completion
+                        if not will_auto_extract and was_tracked:
                             self.__spawn_move_process(diff.new_file.name)
 
                 # Remove from pending completion
