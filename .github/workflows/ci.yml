@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, develop, 'fix/move-preexisting-local-files']
+    branches: [master, develop, 'fix/move-preexisting-local-files', 'fix/unrar-multipart-support']
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
   pull_request:
@@ -45,7 +45,7 @@ jobs:
 
   publish:
     name: Publish Docker Image
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/fix/move-preexisting-local-files'
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/fix/move-preexisting-local-files' || github.ref == 'refs/heads/fix/unrar-multipart-support'
     needs: [build-and-test]
     runs-on: ubuntu-latest
     permissions:
@@ -79,6 +79,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
             type=raw,value=fix-move-preexisting-local-files,enable=${{ github.ref == 'refs/heads/fix/move-preexisting-local-files' }}
+            type=raw,value=fix-unrar-multipart-support,enable=${{ github.ref == 'refs/heads/fix/unrar-multipart-support' }}
 
       - name: Build and push
         uses: docker/build-push-action@v5

@@ -53,18 +53,17 @@ LABEL maintainer="nitrobass24" \
       version="0.9.0"
 
 # Install only essential runtime dependencies
+# unar (The Unarchiver) is used for RAR extraction including multipart archives;
+# it is BSD-licensed and supports all RAR versions without redistribution restrictions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     lftp \
     openssh-client \
     p7zip \
     p7zip-full \
-    unrar-free \
+    unar \
     gosu \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
-
-# Set up RAR codec symlink
-RUN ln -sf /usr/lib/p7zip/Codecs/Rar.so /usr/lib/p7zip/Codecs/Rar29.so 2>/dev/null || true
 
 # Set locale
 ENV LC_ALL=C.UTF-8 \
